@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Snip &amp; Video QA</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --tiger:#D94F70;--tiger-dark:#B83558;--tiger-light:#FCE8EE;--tiger-mid:#E8738A;
+  --ash:#1A1208;--smoke:#2D1F0F;--border:#EBD9CC;--muted:#A07850;--cream:#FFFAF7;
+  --success:#059669;--danger:#DC2626;--warn:#D97706;--info:#2563EB;
+}
+html,body{height:100%;font-family:'DM Sans',sans-serif;background:#ffffff;color:var(--ash);overflow:hidden}
+.app{display:grid;grid-template-rows:auto 1fr;height:100vh}
+
+/* ── Top bar ── */
+.topbar{background:#ffffff;border-bottom:2px solid var(--tiger);padding:10px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;box-shadow:0 1px 8px rgba(217,79,112,0.08)}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-badge{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--tiger),var(--tiger-dark));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;color:#fff;flex-shrink:0}
+.logo-text{font-size:13px;font-weight:700;color:var(--ash)}
+.logo-sub{font-size:9px;color:var(--muted);margin-top:1px}
+.topbar-stats{display:flex;gap:22px}
+.stat{text-align:center}
+.stat-val{font-size:17px;font-weight:700;font-family:'DM Mono',monospace;line-height:1}
+.stat-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-top:1px}
+
+/* ── Main layout ── */
+.main{display:grid;grid-template-columns:1fr 420px;overflow:hidden}
+
+/* ── Left panel ── */
+.left{display:flex;flex-direction:column;overflow:hidden;background:#ffffff}
+
+/* Drop zone (full screen when empty) */
+.drop-area{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:32px;cursor:pointer;position:relative}
+.drop-area.has-image{cursor:default}
+.drop-bg{position:absolute;inset:0;border:3px dashed #F0C8D4;border-radius:16px;margin:16px;pointer-events:none;transition:all 0.2s}
+.drop-area.drag-over .drop-bg,.drop-area:not(.has-image):hover .drop-bg{border-color:var(--tiger);background:rgba(217,79,112,0.04)}
+.drop-prompt{display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;z-index:1;pointer-events:none}
+.drop-icon-wrap{width:72px;height:72px;border-radius:20px;background:linear-gradient(135deg,var(--tiger-light),#FFD4B8);display:flex;align-items:center;justify-content:center;font-size:32px}
+.drop-h{font-size:18px;font-weight:700;color:var(--ash)}
+.drop-sub{font-size:13px;color:var(--muted);line-height:1.7;max-width:380px}
+.drop-methods{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.method-pill{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:20px;background:#fff;border:1.5px solid var(--border);font-size:12px;font-weight:600;color:var(--ash)}
+.method-pill .key{background:var(--ash);color:#F5EDE4;padding:2px 7px;border-radius:4px;font-size:10px;font-family:'DM Mono',monospace}
+.paste-hint{font-size:11px;color:var(--muted);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+
+/* Canvas area */
+.canvas-area{flex:1;display:none;flex-direction:column;overflow:hidden}
+.canvas-area.show{display:flex}
+.canvas-toolbar{background:#1A1208;padding:8px 14px;display:flex;align-items:center;gap:7px;flex-wrap:wrap;flex-shrink:0}
+.tb-label{font-size:10px;font-weight:700;color:#7A5C40;letter-spacing:0.08em;text-transform:uppercase;margin-right:2px}
+.tool-btn{display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:7px;border:1.5px solid #3D2A14;background:#2D1F0F;color:#F5EDE4;font-size:11px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all 0.15s;white-space:nowrap}
+.tool-btn:hover{border-color:var(--tiger);color:var(--tiger)}
+.tool-btn.active{background:var(--tiger);border-color:var(--tiger-dark);color:#fff}
+.tb-div{width:1px;height:22px;background:#3D2A14;margin:0 2px;flex-shrink:0}
+.cdot{width:20px;height:20px;border-radius:50%;cursor:pointer;border:2.5px solid transparent;transition:border-color 0.15s;flex-shrink:0}
+.cdot:hover,.cdot.active{border-color:#fff}
+.stroke-sel{background:#2D1F0F;border:1px solid #3D2A14;color:#F5EDE4;font-size:11px;padding:5px 8px;border-radius:6px;outline:none;cursor:pointer;font-family:'DM Mono',monospace}
+.tb-spacer{flex:1}
+.new-snip-btn{display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:7px;background:none;border:1.5px solid #3D2A14;color:#7A5C40;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all 0.15s}
+.new-snip-btn:hover{border-color:var(--tiger);color:var(--tiger)}
+
+.canvas-scroll{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:flex-start;background:#FBF0F3;padding:12px;cursor:crosshair}
+#ann-canvas{display:block;border-radius:4px;box-shadow:0 4px 24px rgba(0,0,0,0.5);max-width:100%}
+
+/* Capture panel (bottom of left) */
+.capture-panel{background:#FCE8EE;border-top:2px solid var(--tiger);padding:12px 16px;flex-shrink:0}
+.cp-row1{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.ts-wrap{display:flex;align-items:center;gap:6px;flex:1}
+.ts-label{font-size:11px;font-weight:600;color:var(--muted);white-space:nowrap}
+.ts-inp{width:90px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Mono',monospace;font-size:13px;font-weight:700;color:var(--tiger);background:#fff;outline:none;text-align:center}
+.ts-inp:focus{border-color:var(--tiger)}
+.ts-inp::placeholder{color:#D4B89A;font-weight:400}
+.video-src{flex:1;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:11px;font-family:'DM Sans',sans-serif;color:var(--ash);background:#fff;outline:none}
+.video-src:focus{border-color:var(--tiger)}
+.video-src::placeholder{color:#C4A882}
+.issue-inp{width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--ash);background:#fff;outline:none;margin-bottom:8px}
+.issue-inp:focus{border-color:var(--tiger)}
+.issue-inp::placeholder{color:#C4A882}
+.sels{display:flex;gap:8px;margin-bottom:8px}
+.qa-sel{flex:1;padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--ash);background:#fff;outline:none;cursor:pointer}
+.qa-sel:focus{border-color:var(--tiger)}
+.btn-log{width:100%;padding:10px;border-radius:8px;background:linear-gradient(135deg,var(--tiger),var(--tiger-dark));color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity 0.15s}
+.btn-log:hover{opacity:0.92}
+.btn-log:disabled{background:#EBD9CC;color:var(--muted);cursor:not-allowed}
+.cp-hint{font-size:10px;color:var(--muted);text-align:center;margin-top:6px}
+
+/* ── Right panel ── */
+.right{background:#FFFAF7;border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.rh{padding:12px 14px;border-bottom:1px solid var(--border);background:#fff;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.rh-title{font-size:13px;font-weight:700}
+.rh-count{font-size:11px;color:var(--muted)}
+.frow{padding:8px 14px;border-bottom:1px solid var(--border);display:flex;gap:5px;flex-wrap:wrap;flex-shrink:0}
+.fb{padding:3px 9px;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:10px;font-weight:600;cursor:pointer;color:var(--muted);transition:all 0.15s;font-family:'DM Sans',sans-serif}
+.fb:hover,.fb.active{background:var(--tiger);color:#fff;border-color:var(--tiger)}
+.ilist{flex:1;overflow-y:auto;padding:10px}
+
+/* Issue cards */
+.icard{background:#fff;border:1.5px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden;transition:border-color 0.15s}
+.icard:hover{border-color:#D4B89A}
+.icard.resolved{opacity:0.55}
+.icard-top{display:flex;align-items:center;gap:7px;padding:9px 11px 5px;flex-wrap:wrap}
+.inum{width:22px;height:22px;border-radius:6px;background:var(--tiger);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;font-family:'DM Mono',monospace;flex-shrink:0}
+.its{font-family:'DM Mono',monospace;font-size:11px;color:var(--tiger);font-weight:700;padding:2px 6px;border-radius:5px;background:var(--tiger-light)}
+.sev-b{font-size:9px;font-weight:700;padding:2px 6px;border-radius:6px;text-transform:uppercase;letter-spacing:0.05em}
+.sev-b.critical{background:#FEE2E2;color:#DC2626}
+.sev-b.major{background:#FEF3C7;color:#D97706}
+.sev-b.minor{background:#DBEAFE;color:#2563EB}
+.sev-b.suggestion{background:#D1FAE5;color:#059669}
+.cat-b{font-size:9px;color:#7A5C40;background:#F3E8DC;padding:2px 6px;border-radius:6px;font-weight:600}
+.icard-desc{padding:0 11px 6px;font-size:12px;color:var(--ash);line-height:1.5}
+.icard-img{width:100%;max-height:120px;object-fit:contain;border-top:1px solid var(--border);background:#F5F5F5;display:block;cursor:pointer}
+.icard-acts{display:flex;gap:5px;padding:6px 11px;border-top:1px solid var(--border);background:#FAFAFA}
+.ia{font-size:10px;padding:3px 9px;border-radius:5px;border:1px solid var(--border);background:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;color:var(--muted);transition:all 0.15s}
+.ia.resolve{color:var(--success);border-color:#BBF7D0}.ia.resolve:hover{background:#D1FAE5}
+.ia.remove{color:var(--danger);border-color:#FECACA}.ia.remove:hover{background:#FEE2E2}
+.ia.edit{color:var(--info);border-color:#BFDBFE}.ia.edit:hover{background:#DBEAFE}
+
+/* Export */
+.exp-wrap{padding:10px 14px;border-top:1px solid var(--border);background:#fff;flex-shrink:0}
+.meta-row{display:flex;gap:6px;margin-bottom:8px}
+.meta-inp{flex:1;padding:6px 10px;border:1.5px solid var(--border);border-radius:7px;font-size:11px;font-family:'DM Sans',sans-serif;color:var(--ash);background:var(--cream);outline:none}
+.meta-inp:focus{border-color:var(--tiger)}
+.exp-row{display:flex;gap:7px}
+.btn-exp{flex:1;padding:10px;border-radius:8px;background:linear-gradient(135deg,var(--tiger),var(--tiger-dark));color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;box-shadow:0 3px 10px rgba(226,112,58,0.3)}
+.btn-exp:hover{box-shadow:0 4px 14px rgba(226,112,58,0.45)}
+.btn-exp:disabled{background:#EBD9CC;color:var(--muted);box-shadow:none;cursor:not-allowed}
+.btn-clr{padding:10px 13px;border-radius:8px;background:#FEF2F2;color:var(--danger);border:1px solid #FECACA;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif}
+.exp-note{font-size:9px;color:var(--muted);text-align:center;margin-top:6px}
+
+/* Empty state */
+.empty{text-align:center;padding:40px 16px;color:#C4A882}
+.empty-icon{font-size:28px;margin-bottom:8px;opacity:0.4}
+.empty-txt{font-size:11px;line-height:1.8}
+
+/* Notification */
+.notif{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--tiger-dark);color:#fff;padding:9px 20px;border-radius:16px;font-size:12px;font-weight:600;z-index:9999;opacity:0;transition:opacity 0.25s;pointer-events:none;white-space:nowrap;font-family:'DM Sans',sans-serif}
+.notif.show{opacity:1}
+
+/* Text input floating */
+.floating-txt{position:fixed;font-size:14px;font-weight:700;background:rgba(0,0,0,0.55);border-radius:4px;padding:2px 6px;outline:none;min-width:120px;z-index:5000;font-family:'DM Sans',sans-serif}
+
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:#D94F7044;border-radius:2px}
+
+/* ── Video Player ──────────────────────────────────────────── */
+.vid-load{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px;background:#1A1208;text-align:center}
+.vid-drop{border:2px dashed #3D2A14;border-radius:10px;padding:20px 24px;cursor:pointer;transition:all 0.2s;width:100%;max-width:400px}
+.vid-drop:hover{border-color:var(--tiger);background:#1F0810}
+.vid-drop-title{font-size:12px;font-weight:600;color:#F5EDE4;margin-bottom:4px}
+.vid-drop-sub{font-size:10px;color:#7A5C40}
+.vid-url-row{display:flex;gap:7px;width:100%;max-width:400px}
+.vid-url-inp{flex:1;padding:7px 10px;border-radius:7px;border:1.5px solid #3D2A14;background:#2D1F0F;color:#F5EDE4;font-size:11px;font-family:'DM Sans',sans-serif;outline:none}
+.vid-url-inp:focus{border-color:var(--tiger)}
+.vid-url-inp::placeholder{color:#5A3E28}
+.vid-load-btn{padding:7px 12px;border-radius:7px;background:var(--tiger);color:#fff;border:none;font-size:11px;font-weight:600;cursor:pointer}
+.vid-player-wrap{display:none;flex-direction:column;flex:1;overflow:hidden}
+.vid-player-wrap.show{display:flex}
+.vid-video-wrap{flex:1;background:#000;min-height:0}
+.vid-video-wrap video{width:100%;height:100%;max-height:220px;object-fit:contain;display:block}
+.vid-tl{height:5px;background:#2D1F0F;position:relative;cursor:pointer;flex-shrink:0}
+.vid-tl-prog{height:100%;background:var(--tiger);pointer-events:none;transition:width 0.1s linear}
+.vid-controls{background:#111;padding:7px 12px;display:flex;align-items:center;gap:8px;flex-shrink:0}
+.vcbtn{background:none;border:none;color:#F5EDE4;cursor:pointer;font-size:16px;padding:3px 6px;border-radius:5px;line-height:1;transition:background 0.15s}
+.vcbtn:hover{background:#2D1F0F}
+.vid-td{font-family:'DM Mono',monospace;font-size:11px;color:#F5EDE4;white-space:nowrap}
+.vid-gap{flex:1}
+.vid-spd{background:#2D1F0F;border:1px solid #3D2A14;color:#F5EDE4;font-size:10px;padding:3px 6px;border-radius:5px;outline:none;cursor:pointer;font-family:'DM Mono',monospace}
+.vid-vol{width:55px;accent-color:var(--tiger)}
+.vid-change{font-size:10px;color:#7A5C40;cursor:pointer;padding:3px 8px;border-radius:5px;border:1px solid #3D2A14;background:none;font-family:'DM Sans',sans-serif}
+.vid-change:hover{color:#F5EDE4}
+.vid-auto-stamp{font-size:10px;color:var(--tiger);font-weight:700;padding:2px 8px;background:var(--tiger-light);border-radius:8px;white-space:nowrap}
+/* Tab switcher */
+.tab-bar{display:flex;background:#fff;border-bottom:2px solid var(--border);flex-shrink:0}
+.tab-btn{flex:1;padding:9px 12px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-2px;font-family:'DM Sans',sans-serif;transition:all 0.15s}
+.tab-btn:hover{color:var(--ash)}
+.tab-btn.active{color:var(--tiger);border-bottom-color:var(--tiger)}
+.tab-panel{display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0}
+.tab-panel.show{display:flex}
+
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-badge">SQ</div>
+    <div>
+      <div class="logo-text">Snip &amp; Video QA</div>
+      <div class="logo-sub">Paste snip or load video for auto-timestamp &bull; Annotate &bull; Export to Excel with screenshots</div>
+    </div>
+  </div>
+  <div class="topbar-stats">
+    <div class="stat"><div class="stat-val" id="s-total" style="color:var(--tiger)">0</div><div class="stat-label">Total</div></div>
+    <div class="stat"><div class="stat-val" id="s-crit" style="color:#DC2626">0</div><div class="stat-label">Critical</div></div>
+    <div class="stat"><div class="stat-val" id="s-major" style="color:#D97706">0</div><div class="stat-label">Major</div></div>
+    <div class="stat"><div class="stat-val" id="s-res" style="color:#059669">0</div><div class="stat-label">Resolved</div></div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- LEFT -->
+  <div class="left" id="left-panel">
+
+    <!-- Tab switcher: Snip | Video -->
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tab-snip" onclick="switchTab('snip')">&#128247; Paste Snip</button>
+      <button class="tab-btn" id="tab-video" onclick="switchTab('video')">&#9654; Video Player</button>
+    </div>
+
+    <!-- SNIP TAB -->
+    <div class="tab-panel show" id="panel-snip" style="flex-direction:column">
+
+    <!-- Drop / paste zone -->
+    <div class="drop-area" id="drop-area"
+      onclick="triggerFilePick()"
+      ondragover="onDragOver(event)"
+      ondragleave="onDragLeave(event)"
+      ondrop="onDrop(event)">
+      <div class="drop-bg"></div>
+      <div class="drop-prompt" id="drop-prompt">
+        <div class="drop-icon-wrap">&#128247;</div>
+        <div class="drop-h">Paste or drop your screenshot here</div>
+        <div class="drop-sub">
+          Watch the video in MS Stream, SharePoint, YouTube or any player.<br>
+          Use Snip &amp; Sketch to capture the frame, then paste it here.
+        </div>
+        <div class="drop-methods">
+          <div class="method-pill"><span class="key">Ctrl+V</span> Paste snip</div>
+          <div class="method-pill"><span class="key">Drag</span> Drop image</div>
+          <div class="method-pill"><span class="key">Click</span> Browse file</div>
+        </div>
+        <div class="paste-hint">&#9654; Waiting for screenshot...</div>
+      </div>
+    </div>
+    <input type="file" id="file-inp" accept="image/*" style="display:none" onchange="loadImageFile(this)">
+
+    <!-- Canvas annotation area -->
+    <div class="canvas-area" id="canvas-area">
+      <div class="canvas-toolbar">
+        <span class="tb-label">Tool</span>
+        <button class="tool-btn active" id="tool-rect"  onclick="setTool('rect')">&#9645; Rect</button>
+        <button class="tool-btn"        id="tool-arrow" onclick="setTool('arrow')">&#10148; Arrow</button>
+        <button class="tool-btn"        id="tool-free"  onclick="setTool('free')">&#9999; Pen</button>
+        <button class="tool-btn"        id="tool-text"  onclick="setTool('text')">T Text</button>
+        <div class="tb-div"></div>
+        <span class="tb-label">Colour</span>
+        <div class="cdot active" style="background:#EF4444" onclick="setColor('#EF4444',this)" title="Red"></div>
+        <div class="cdot" style="background:#FACC15" onclick="setColor('#FACC15',this)" title="Yellow"></div>
+        <div class="cdot" style="background:#22C55E" onclick="setColor('#22C55E',this)" title="Green"></div>
+        <div class="cdot" style="background:#3B82F6" onclick="setColor('#3B82F6',this)" title="Blue"></div>
+        <div class="cdot" style="background:#FF6B35" onclick="setColor('#FF6B35',this)" title="Orange"></div>
+        <div class="cdot" style="background:#FFFFFF;border:1px solid #666" onclick="setColor('#FFFFFF',this)" title="White"></div>
+        <div class="tb-div"></div>
+        <select class="stroke-sel" onchange="annStroke=parseInt(this.value)">
+          <option value="2">Thin</option>
+          <option value="3" selected>Medium</option>
+          <option value="5">Thick</option>
+          <option value="8">Bold</option>
+        </select>
+        <div class="tb-div"></div>
+        <button class="tool-btn" onclick="annUndo()">&#8617; Undo</button>
+        <button class="tool-btn" onclick="annClear()">&#10005; Clear</button>
+        <div class="tb-spacer"></div>
+        <button class="new-snip-btn" onclick="newSnip()">&#43; New Snip</button>
+      </div>
+
+      <div class="canvas-scroll" id="canvas-scroll">
+        <canvas id="ann-canvas"></canvas>
+        <canvas id="ss-canvas" style="display:none"></canvas>
+      </div>
+    </div>
+
+    <!-- Capture panel (always visible once canvas is shown) -->
+    <div class="capture-panel" id="capture-panel" style="display:none">
+      <div class="cp-row1">
+        <div class="ts-wrap">
+          <span class="ts-label">Timecode</span>
+          <input class="ts-inp" id="ts-inp" placeholder="0:00" maxlength="8">
+        </div>
+        <input class="video-src" id="vsrc-inp" placeholder="Video / module name (optional)">
+      </div>
+      <input class="issue-inp" id="issue-inp" placeholder="Describe the defect..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();logIssue()}">
+      <div class="sels">
+        <select class="qa-sel" id="cat-sel">
+          <option>Visual</option>
+          <option>Audio</option>
+          <option>Caption / Subtitle</option>
+          <option>Script / Content</option>
+          <option>Technical</option>
+          <option>Instructional</option>
+          <option>Branding</option>
+          <option>Other</option>
+        </select>
+        <select class="qa-sel" id="sev-sel">
+          <option value="Critical">&#128308; Critical</option>
+          <option value="Major" selected>&#128992; Major</option>
+          <option value="Minor">&#128994; Minor</option>
+          <option value="Suggestion">&#128309; Suggestion</option>
+        </select>
+      </div>
+      <button class="btn-log" id="log-btn" onclick="logIssue()">
+        &#10010; Log Defect
+      </button>
+      <div class="cp-hint">Annotate the screenshot above &bull; Enter timecode &bull; Describe the issue &bull; Enter to log</div>
+    </div>
+
+    </div><!-- /panel-snip -->
+
+    <!-- VIDEO TAB -->
+    <div class="tab-panel" id="panel-video">
+      <!-- Video load screen -->
+      <div class="vid-load" id="vid-load">
+        <div class="vid-drop" onclick="document.getElementById('vid-finp').click()"
+          ondragover="event.preventDefault()" ondrop="vidHandleDrop(event)">
+          <div style="font-size:24px;margin-bottom:8px;opacity:0.5">&#9654;</div>
+          <div class="vid-drop-title">Drop video file here or click to browse</div>
+          <div class="vid-drop-sub">MP4, WebM, MOV &bull; file stays on your computer</div>
+        </div>
+        <input type="file" id="vid-finp" accept="video/*" style="display:none" onchange="vidLoadFile(this)">
+        <div style="color:#5A3E28;font-size:10px">— or enter URL —</div>
+        <div class="vid-url-row">
+          <input class="vid-url-inp" id="vid-url" placeholder="https://example.com/video.mp4" onkeydown="if(event.key==='Enter')vidLoadURL()">
+          <button class="vid-load-btn" onclick="vidLoadURL()">Load</button>
+        </div>
+        <div style="font-size:10px;color:#5A3E28;text-align:center;max-width:360px;line-height:1.6">
+          Pause the video at any moment &mdash; timecode auto-stamps into the issue form
+        </div>
+      </div>
+      <!-- Video player -->
+      <div class="vid-player-wrap" id="vid-player-wrap">
+        <div class="vid-video-wrap">
+          <video id="qa-vid"
+            onplay="vidOnPlay()" onpause="vidOnPause()"
+            ontimeupdate="vidOnTU()" onloadedmetadata="vidOnLoaded()" onerror="vidOnErr()">
+          </video>
+        </div>
+        <div class="vid-tl" id="vid-tl" onclick="vidSeek(event)">
+          <div class="vid-tl-prog" id="vid-tlp" style="width:0%"></div>
+        </div>
+        <div class="vid-controls">
+          <button class="vcbtn" id="vid-pbtn" onclick="vidTogglePlay()">&#9654;</button>
+          <button class="vcbtn" onclick="vidSkip(-10)" title="-10s">&#8634;10</button>
+          <button class="vcbtn" onclick="vidSkip(10)" title="+10s">10&#8635;</button>
+          <span class="vid-td" id="vid-td">0:00 / 0:00</span>
+          <span class="vid-gap"></span>
+          <span class="vid-auto-stamp" id="vid-stamp" style="display:none"></span>
+          <input type="range" class="vid-vol" min="0" max="1" step="0.05" value="1" oninput="document.getElementById('qa-vid').volume=this.value">
+          <select class="vid-spd" onchange="document.getElementById('qa-vid').playbackRate=this.value">
+            <option value="0.5">0.5x</option><option value="0.75">0.75x</option>
+            <option value="1" selected>1x</option><option value="1.25">1.25x</option>
+            <option value="1.5">1.5x</option><option value="2">2x</option>
+          </select>
+          <button class="vid-change" onclick="vidChange()">&#8635; Change</button>
+        </div>
+      </div>
+      <!-- Capture panel for video tab -->
+      <div class="capture-panel">
+        <div class="cp-row1">
+          <div class="ts-wrap">
+            <span class="ts-label">Timecode</span>
+            <input class="ts-inp" id="vid-ts-inp" placeholder="0:00" maxlength="8">
+          </div>
+          <button class="btn-ss" id="vid-ss-btn" onclick="vidTakeScreenshot()" disabled
+            style="display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;background:#1A1208;color:#F5EDE4;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;transition:background 0.15s;white-space:nowrap">
+            &#128247; Take Screenshot
+          </button>
+          <input class="video-src" id="vid-src-inp" placeholder="Video / module name (optional)">
+        </div>
+        <!-- Screenshot preview row -->
+        <div id="vid-ss-preview-row" style="display:none;align-items:center;gap:10px;margin-bottom:8px">
+          <img id="vid-ss-preview" style="width:90px;height:50px;object-fit:cover;border-radius:6px;border:1.5px solid var(--border);cursor:pointer" onclick="vidViewFull()" title="Click to enlarge">
+          <div style="display:flex;flex-direction:column;gap:3px">
+            <span style="font-size:10px;color:var(--tiger);font-weight:600;cursor:pointer" onclick="vidTakeScreenshot()">&#8635; Retake</span>
+            <span style="font-size:10px;color:var(--danger);cursor:pointer" onclick="vidClearSS()">&#10005; Remove</span>
+          </div>
+          <span style="font-size:11px;color:var(--muted);font-style:italic">Screenshot ready</span>
+        </div>
+        <input class="issue-inp" id="vid-issue-inp" placeholder="Describe the defect..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();vidLogIssue()}">
+        <div class="sels">
+          <select class="qa-sel" id="vid-cat-sel">
+            <option>Visual</option><option>Audio</option><option>Caption / Subtitle</option>
+            <option>Script / Content</option><option>Technical</option>
+            <option>Instructional</option><option>Branding</option><option>Other</option>
+          </select>
+          <select class="qa-sel" id="vid-sev-sel">
+            <option value="Critical">&#128308; Critical</option>
+            <option value="Major" selected>&#128992; Major</option>
+            <option value="Minor">&#128994; Minor</option>
+            <option value="Suggestion">&#128309; Suggestion</option>
+          </select>
+        </div>
+        <button class="btn-log" onclick="vidLogIssue()">&#10010; Log Issue</button>
+        <div class="cp-hint">Pause video &rarr; timecode auto-fills &rarr; optionally take screenshot &rarr; describe &rarr; Log</div>
+      </div>
+    </div><!-- /panel-video -->
+
+  </div><!-- /left -->
+
+  <!-- RIGHT -->
+  <div class="right">
+    <div class="rh">
+      <div class="rh-title">Defect Log</div>
+      <div class="rh-count" id="rh-count">No defects yet</div>
+    </div>
+    <div class="frow">
+      <button class="fb active" onclick="setFilter('all',this)">All</button>
+      <button class="fb" onclick="setFilter('Critical',this)" style="color:#DC2626">Critical</button>
+      <button class="fb" onclick="setFilter('Major',this)"    style="color:#D97706">Major</button>
+      <button class="fb" onclick="setFilter('Minor',this)"    style="color:#2563EB">Minor</button>
+      <button class="fb" onclick="setFilter('open',this)">Open</button>
+      <button class="fb" onclick="setFilter('resolved',this)" style="color:#059669">Resolved</button>
+    </div>
+    <div class="ilist" id="ilist">
+      <div class="empty">
+        <div class="empty-icon">&#128247;</div>
+        <div class="empty-txt">
+          Paste a screenshot with Ctrl+V<br>
+          or drag an image onto the left panel.<br><br>
+          Annotate, describe, log. Repeat.<br>
+          Export everything to Excel when done.
+        </div>
+      </div>
+    </div>
+    <div class="exp-wrap">
+      <div class="meta-row">
+        <input class="meta-inp" id="exp-proj"    placeholder="Project / course name">
+        <input class="meta-inp" id="exp-reviewer" placeholder="Reviewer name">
+      </div>
+      <div class="exp-row">
+        <button class="btn-exp" id="exp-btn" onclick="exportExcel()" disabled>
+          &#11015; Export to Excel (screenshots embedded)
+        </button>
+        <button class="btn-clr" onclick="clearAll()" title="Clear all">&#128465;</button>
+      </div>
+      <div class="exp-note">All annotated screenshots embedded in Excel cells &bull; Opens in Excel, LibreOffice, Google Sheets</div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+</div><!-- /app -->
+
+<div class="notif" id="notif"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let issues      = [];
+let counter     = 0;
+let activeFilter = 'all';
+let currentImageDataURL = null; // the raw snip (before annotation)
+
+// Annotation state
+let annCtx     = null;
+let annCanvas  = null;
+let annTool    = 'rect';
+let annColor   = '#EF4444';
+let annStroke  = 3;
+let annHistory = [];
+let annDrawing = false;
+let annStartX  = 0, annStartY = 0;
+let annBaseImg = null;
+let floatingTxt = null;
+let editingIssueId = null; // tracks issue being re-annotated
+
+// ── Paste via Ctrl+V ───────────────────────────────────────────────────────
+document.addEventListener('paste', e => {
+  const items = e.clipboardData?.items;
+  if(!items) return;
+  for(const item of items) {
+    if(item.type.startsWith('image/')) {
+      e.preventDefault();
+      const blob = item.getAsFile();
+      loadImageBlob(blob);
+      return;
+    }
+  }
+});
+
+// ── Drag & drop ────────────────────────────────────────────────────────────
+function onDragOver(e) {
+  e.preventDefault();
+  document.getElementById('drop-area').classList.add('drag-over');
+}
+function onDragLeave(e) {
+  document.getElementById('drop-area').classList.remove('drag-over');
+}
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-area').classList.remove('drag-over');
+  const file = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
+  if(file) loadImageBlob(file);
+}
+
+// ── File browse ────────────────────────────────────────────────────────────
+function triggerFilePick() {
+  // Only trigger if we're in the drop zone (no image loaded)
+  if(!document.getElementById('canvas-area').classList.contains('show')) {
+    document.getElementById('file-inp').click();
+  }
+}
+function loadImageFile(inp) {
+  if(inp.files[0]) loadImageBlob(inp.files[0]);
+  inp.value = '';
+}
+
+// ── Load image blob → canvas ───────────────────────────────────────────────
+function loadImageBlob(blob) {
+  const url = URL.createObjectURL(blob);
+  loadImageURL(url, blob.name || '');
+}
+
+function loadImageURL(url, filename) {
+  const img = new Image();
+  img.onload = () => {
+    // Show canvas area, hide drop zone
+    document.getElementById('drop-area').style.display   = 'none';
+    document.getElementById('canvas-area').classList.add('show');
+    document.getElementById('capture-panel').style.display = 'block';
+
+    // Fit canvas to container (max 100% width, preserve aspect)
+    const scroll = document.getElementById('canvas-scroll');
+    const maxW   = scroll.clientWidth  - 24;
+    const maxH   = scroll.clientHeight || 600;
+    const scale  = Math.min(1, maxW / img.width);
+    const cw = Math.round(img.width  * scale);
+    const ch = Math.round(img.height * scale);
+
+    annCanvas = document.getElementById('ann-canvas');
+    annCtx    = annCanvas.getContext('2d');
+    annCanvas.width  = cw;
+    annCanvas.height = ch;
+    annCtx.drawImage(img, 0, 0, cw, ch);
+
+    currentImageDataURL = annCanvas.toDataURL('image/jpeg', 0.92);
+    annBaseImg = annCtx.getImageData(0, 0, cw, ch);
+    annHistory = [annCtx.getImageData(0, 0, cw, ch)];
+
+    // Wire events
+    annCanvas.onmousedown  = annDown;
+    annCanvas.onmousemove  = annMove;
+    annCanvas.onmouseup    = annUp;
+    annCanvas.onmouseleave = annUp;
+    annCanvas.ontouchstart = e => { e.preventDefault(); annDown(touchToMouse(e)); };
+    annCanvas.ontouchmove  = e => { e.preventDefault(); annMove(touchToMouse(e)); };
+    annCanvas.ontouchend   = e => { e.preventDefault(); annUp(); };
+
+    // Try to extract timecode from filename (Snip names like "Screenshot 2026-05-28 173045")
+    const timeMatch = filename.match(/(\d{6})$/);
+    if(timeMatch) {
+      const t = timeMatch[1];
+      const h = parseInt(t.slice(0,2)), m = parseInt(t.slice(2,4)), s = parseInt(t.slice(4,6));
+      document.getElementById('ts-inp').value = h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+    }
+
+    document.getElementById('issue-inp').focus();
+    notify('Screenshot loaded — annotate then log the defect');
+    URL.revokeObjectURL(url);
+  };
+  img.onerror = () => notify('Could not load image');
+  img.src = url;
+}
+
+function touchToMouse(e) {
+  const t = e.touches[0] || e.changedTouches[0];
+  return { clientX: t.clientX, clientY: t.clientY };
+}
+
+function pad(n) { return String(n).padStart(2,'0'); }
+
+// ── New snip ───────────────────────────────────────────────────────────────
+function newSnip() {
+  removeFloatingTxt();
+  document.getElementById('drop-area').style.display   = 'flex';
+  document.getElementById('canvas-area').classList.remove('show');
+  document.getElementById('capture-panel').style.display = 'none';
+  document.getElementById('issue-inp').value = '';
+  document.getElementById('ts-inp').value    = '';
+  currentImageDataURL = null;
+  annHistory = [];
+  if(editingIssueId !== null) {
+    editingIssueId = null;
+    document.getElementById('log-btn').innerHTML = '&#10010; Log Defect';
+  }
+}
+
+// ── Annotation tools ───────────────────────────────────────────────────────
+function setTool(t) {
+  annTool = t;
+  removeFloatingTxt();
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tool-' + t).classList.add('active');
+  if(annCanvas) annCanvas.style.cursor = t === 'text' ? 'text' : 'crosshair';
+}
+
+function setColor(hex, el) {
+  annColor = hex;
+  document.querySelectorAll('.cdot').forEach(d => d.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function getXY(e) {
+  const r = annCanvas.getBoundingClientRect();
+  return { x: (e.clientX - r.left), y: (e.clientY - r.top) };
+}
+
+function pushHistory() {
+  annHistory.push(annCtx.getImageData(0, 0, annCanvas.width, annCanvas.height));
+  if(annHistory.length > 40) annHistory.shift();
+}
+
+function annUndo() {
+  if(annHistory.length <= 1) return;
+  annHistory.pop();
+  annCtx.putImageData(annHistory[annHistory.length - 1], 0, 0);
+}
+
+function annClear() {
+  removeFloatingTxt();
+  annCtx.putImageData(annBaseImg, 0, 0);
+  annHistory = [annCtx.getImageData(0, 0, annCanvas.width, annCanvas.height)];
+  notify('Annotations cleared');
+}
+
+function annDown(e) {
+  if(annTool === 'text') { placeText(e); return; }
+  annDrawing = true;
+  const {x,y} = getXY(e);
+  annStartX = x; annStartY = y;
+  pushHistory();
+  if(annTool === 'free') {
+    annCtx.beginPath();
+    annCtx.moveTo(x, y);
+  }
+}
+
+function annMove(e) {
+  if(!annDrawing) return;
+  const {x,y} = getXY(e);
+  annCtx.strokeStyle = annColor;
+  annCtx.lineWidth   = annStroke;
+  annCtx.lineCap     = 'round';
+  annCtx.lineJoin    = 'round';
+  if(annTool === 'free') {
+    annCtx.lineTo(x, y);
+    annCtx.stroke();
+    return;
+  }
+  // Preview rect/arrow
+  annCtx.putImageData(annHistory[annHistory.length - 1], 0, 0);
+  drawShape(annStartX, annStartY, x, y);
+}
+
+function annUp(e) {
+  if(!annDrawing) return;
+  annDrawing = false;
+  if(e) {
+    const {x,y} = getXY(e);
+    if(annTool !== 'free') {
+      annCtx.putImageData(annHistory[annHistory.length - 1], 0, 0);
+      drawShape(annStartX, annStartY, x, y);
+    }
+  }
+  pushHistory();
+}
+
+function drawShape(x1, y1, x2, y2) {
+  annCtx.strokeStyle = annColor;
+  annCtx.lineWidth   = annStroke;
+  annCtx.lineCap     = 'round';
+  annCtx.lineJoin    = 'round';
+  if(annTool === 'rect') {
+    annCtx.beginPath();
+    annCtx.strokeRect(x1, y1, x2-x1, y2-y1);
+  } else if(annTool === 'arrow') {
+    drawArrow(x1, y1, x2, y2);
+  }
+}
+
+function drawArrow(x1, y1, x2, y2) {
+  const dx = x2-x1, dy = y2-y1;
+  const len = Math.sqrt(dx*dx+dy*dy);
+  if(len < 5) return;
+  const hl    = Math.min(22, len * 0.35);
+  const angle = Math.atan2(dy, dx);
+  annCtx.beginPath();
+  annCtx.moveTo(x1, y1);
+  annCtx.lineTo(x2, y2);
+  annCtx.stroke();
+  annCtx.fillStyle = annColor;
+  annCtx.beginPath();
+  annCtx.moveTo(x2, y2);
+  annCtx.lineTo(x2 - hl*Math.cos(angle-Math.PI/6), y2 - hl*Math.sin(angle-Math.PI/6));
+  annCtx.lineTo(x2 - hl*Math.cos(angle+Math.PI/6), y2 - hl*Math.sin(angle+Math.PI/6));
+  annCtx.closePath();
+  annCtx.fill();
+}
+
+function placeText(e) {
+  removeFloatingTxt();
+  const {x,y} = getXY(e);
+  const r = annCanvas.getBoundingClientRect();
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.placeholder = 'Type, press Enter';
+  inp.className = 'floating-txt';
+  inp.style.left  = (r.left + x) + 'px';
+  inp.style.top   = (r.top  + y - 16) + 'px';
+  inp.style.color = annColor;
+  inp.style.borderColor = annColor;
+  document.body.appendChild(inp);
+  inp.focus();
+  floatingTxt = inp;
+  inp.onkeydown = ev => {
+    if(ev.key === 'Enter') {
+      const txt = inp.value.trim();
+      if(txt) {
+        pushHistory();
+        const fs = annStroke * 5 + 10;
+        annCtx.font = `bold ${fs}px DM Sans,sans-serif`;
+        annCtx.fillStyle   = annColor;
+        annCtx.strokeStyle = 'rgba(0,0,0,0.65)';
+        annCtx.lineWidth   = annStroke + 1;
+        annCtx.strokeText(txt, x, y);
+        annCtx.fillText(txt, x, y);
+        pushHistory();
+      }
+      removeFloatingTxt();
+    }
+    if(ev.key === 'Escape') removeFloatingTxt();
+  };
+}
+
+function removeFloatingTxt() {
+  if(floatingTxt) { floatingTxt.remove(); floatingTxt = null; }
+}
+
+// ── Log defect ─────────────────────────────────────────────────────────────
+function logIssue() {
+  removeFloatingTxt();
+  const desc = document.getElementById('issue-inp').value.trim();
+  if(!desc) { document.getElementById('issue-inp').focus(); return; }
+  if(!annCanvas) { notify('Load a screenshot first'); return; }
+
+  const annotated = annCanvas.toDataURL('image/jpeg', 0.92);
+
+  // EDIT MODE — update existing issue, do not create new
+  if(editingIssueId !== null) {
+    const existing = issues.find(x => x.id === editingIssueId);
+    if(existing) {
+      existing.screenshot  = annotated;
+      existing.description = desc;
+      existing.tsStr       = document.getElementById('ts-inp').value.trim() || existing.tsStr;
+      existing.videoSrc    = document.getElementById('vsrc-inp').value.trim();
+      existing.category    = document.getElementById('cat-sel').value;
+      existing.severity    = document.getElementById('sev-sel').value;
+      existing.updatedAt   = new Date().toLocaleString();
+    }
+    const updatedId = editingIssueId;
+    editingIssueId = null;
+    document.getElementById('log-btn').innerHTML = '&#10010; Log Defect';
+    document.getElementById('issue-inp').value = '';
+    document.getElementById('ts-inp').value = '';
+    newSnip();
+    render(); updateStats();
+    notify('Issue #' + updatedId + ' updated successfully');
+    return;
+  }
+
+  // CREATE new issue
+  counter++;
+  const issue = {
+    id:          counter,
+    tsStr:       document.getElementById('ts-inp').value.trim() || '—',
+    videoSrc:    document.getElementById('vsrc-inp').value.trim(),
+    screenshot:  annotated,
+    description: desc,
+    category:    document.getElementById('cat-sel').value,
+    severity:    document.getElementById('sev-sel').value,
+    status:      'Open',
+    loggedAt:    new Date().toLocaleString(),
+  };
+  issues.push(issue);
+
+  document.getElementById('issue-inp').value = '';
+  document.getElementById('ts-inp').value    = '';
+  newSnip();
+
+  render(); updateStats();
+  document.getElementById('exp-btn').disabled = false;
+  notify('Defect #' + counter + ' logged with annotated screenshot');
+}
+
+// ── Render issue list ──────────────────────────────────────────────────────
+function render() {
+  const list = document.getElementById('ilist');
+  const fil = issues.filter(i => {
+    if(activeFilter === 'all')      return true;
+    if(activeFilter === 'open')     return i.status === 'Open';
+    if(activeFilter === 'resolved') return i.status === 'Resolved';
+    return i.severity === activeFilter;
+  });
+
+  document.getElementById('rh-count').textContent =
+    issues.length + ' defect' + (issues.length !== 1 ? 's' : '') +
+    (fil.length !== issues.length ? ' (' + fil.length + ' shown)' : '');
+
+  if(!fil.length) {
+    list.innerHTML = `<div class="empty"><div class="empty-icon">${issues.length ? '&#10003;' : '&#128247;'}</div><div class="empty-txt">${issues.length ? 'No defects match this filter' : 'Paste a screenshot with Ctrl+V<br>or drag an image onto the left panel'}</div></div>`;
+    return;
+  }
+
+  list.innerHTML = '';
+  [...fil].reverse().forEach(i => {
+    const sc = i.severity.toLowerCase();
+    const d = document.createElement('div');
+    d.className = 'icard' + (i.status === 'Resolved' ? ' resolved' : '');
+    d.innerHTML = `
+      <div class="icard-top">
+        <div class="inum">${i.id}</div>
+        ${i.tsStr !== '—' ? `<span class="its">${i.tsStr}</span>` : ''}
+        <span class="sev-b ${sc}">${i.severity}</span>
+        <span class="cat-b">${i.category}</span>
+        ${i.videoSrc ? `<span style="font-size:9px;color:var(--muted);margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px" title="${esc(i.videoSrc)}">${esc(i.videoSrc)}</span>` : ''}
+        ${i.status === 'Resolved' ? '<span style="font-size:10px;color:var(--success);font-weight:700;margin-left:auto">&#10003; Done</span>' : ''}
+      </div>
+      <div class="icard-desc">${esc(i.description)}</div>
+      <img class="icard-img" src="${i.screenshot}" alt="screenshot" onclick="openFull(${i.id})" title="Click to enlarge">
+      <div class="icard-acts">
+        <button class="ia edit"    onclick="reloadForEdit(${i.id})">&#9998; Re-annotate</button>
+        <button class="ia resolve" onclick="toggleRes(${i.id})">${i.status === 'Resolved' ? 'Reopen' : '&#10003; Resolve'}</button>
+        <button class="ia remove"  onclick="removeIssue(${i.id})">&#10005;</button>
+        <span style="flex:1"></span>
+        <span style="font-size:9px;color:#C4A882">${i.loggedAt}</span>
+      </div>`;
+    list.appendChild(d);
+  });
+}
+
+function openFull(id) {
+  const i = issues.find(x => x.id === id);
+  if(!i || !i.screenshot) return;
+  const w = window.open();
+  w.document.write('<img src="' + i.screenshot + '" style="max-width:100%;max-height:100vh;display:block;margin:auto;background:#111">');
+}
+
+function reloadForEdit(id) {
+  const i = issues.find(x => x.id === id);
+  if(!i) return;
+  // Set editing mode — do NOT remove the issue
+  editingIssueId = id;
+  // Switch to snip tab
+  switchTab('snip');
+  // Load screenshot into annotation canvas
+  if(i.screenshot) {
+    loadImageURL(i.screenshot, '');
+  } else {
+    newSnip();
+  }
+  document.getElementById('ts-inp').value    = i.tsStr !== '—' ? i.tsStr : '';
+  document.getElementById('vsrc-inp').value  = i.videoSrc || '';
+  document.getElementById('issue-inp').value = i.description;
+  document.getElementById('cat-sel').value   = i.category;
+  document.getElementById('sev-sel').value   = i.severity;
+  // Update Log button to show it's editing
+  document.getElementById('log-btn').textContent = '&#9998; Update Issue #' + id;
+  notify('Editing Issue #' + id + ' — annotate then click Update');
+}
+
+function toggleRes(id) {
+  const i = issues.find(x => x.id === id);
+  if(i) { i.status = i.status === 'Resolved' ? 'Open' : 'Resolved'; render(); updateStats(); }
+}
+
+function removeIssue(id) {
+  issues = issues.filter(x => x.id !== id);
+  render(); updateStats();
+  if(!issues.length) document.getElementById('exp-btn').disabled = true;
+}
+
+function setFilter(f, btn) {
+  activeFilter = f;
+  document.querySelectorAll('.fb').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  render();
+}
+
+function updateStats() {
+  document.getElementById('s-total').textContent = issues.length;
+  document.getElementById('s-crit').textContent  = issues.filter(i => i.severity === 'Critical').length;
+  document.getElementById('s-major').textContent = issues.filter(i => i.severity === 'Major').length;
+  document.getElementById('s-res').textContent   = issues.filter(i => i.status === 'Resolved').length;
+}
+
+function clearAll() {
+  if(!issues.length) return;
+  if(!confirm('Clear all ' + issues.length + ' defects?')) return;
+  issues = []; counter = 0;
+  document.getElementById('exp-btn').disabled = true;
+  render(); updateStats();
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Excel Export — screenshots embedded via JSZip ──────────────────────────
+async function exportExcel() {
+  if(!issues.length) return;
+  const btn = document.getElementById('exp-btn');
+  btn.textContent = 'Generating...'; btn.disabled = true;
+
+  try {
+    const project  = document.getElementById('exp-proj').value.trim()     || 'QA Report';
+    const reviewer = document.getElementById('exp-reviewer').value.trim() || 'QA';
+    const dateStr  = new Date().toLocaleDateString('en-GB');
+
+    // ── Build workbook ─────────────────────────────────────────────────
+    const wb = XLSX.utils.book_new();
+
+    // Summary sheet
+    const sevCounts = { Critical:0, Major:0, Minor:0, Suggestion:0 };
+    issues.forEach(i => { if(sevCounts[i.severity]!==undefined) sevCounts[i.severity]++; });
+    const catCounts = {};
+    issues.forEach(i => { catCounts[i.category] = (catCounts[i.category]||0)+1; });
+
+    const sumWs = XLSX.utils.aoa_to_sheet([
+      ['DEFECT QA REPORT'],
+      [],
+      ['Project:', project],
+      ['Reviewer:', reviewer],
+      ['Date:', dateStr],
+      [],
+      ['TOTALS'],
+      ['Total Defects:', issues.length],
+      ['Critical:', sevCounts.Critical],
+      ['Major:', sevCounts.Major],
+      ['Minor:', sevCounts.Minor],
+      ['Suggestion:', sevCounts.Suggestion],
+      [],
+      ['Open:', issues.filter(i=>i.status==='Open').length],
+      ['Resolved:', issues.filter(i=>i.status==='Resolved').length],
+      [],
+      ['BY CATEGORY'],
+      ...Object.entries(catCounts).map(([k,v])=>[k,v]),
+    ]);
+    sumWs['!cols'] = [{wch:22},{wch:15}];
+    XLSX.utils.book_append_sheet(wb, sumWs, 'Summary');
+
+    // Issues sheet
+    const headers = ['#','Timecode','Video / Module','Severity','Category','Status','Description','Screenshot','Logged At'];
+    const dataRows = issues.map(i => [
+      i.id, i.tsStr, i.videoSrc||'', i.severity, i.category, i.status,
+      i.description, '', i.loggedAt
+    ]);
+
+    const issWs = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+    const ROW_H = 240, ROW_H_N = 20;
+    issWs['!rows'] = [{ hpt: ROW_H_N }, ...issues.map(() => ({ hpt: ROW_H }))];
+    issWs['!cols'] = [{wch:5},{wch:10},{wch:18},{wch:12},{wch:16},{wch:10},{wch:50},{wch:89},{wch:22}];
+    // Screenshot column is H (index 7)
+    XLSX.utils.book_append_sheet(wb, issWs, 'Defects');
+
+    // ── Write to binary & open ZIP ─────────────────────────────────────
+    const wbBin = XLSX.write(wb, { bookType:'xlsx', type:'array' });
+    const zip   = await JSZip.loadAsync(wbBin);
+
+    // ── Add images to xl/media/ ────────────────────────────────────────
+    for(let idx=0; idx<issues.length; idx++) {
+      const b64 = issues[idx].screenshot.replace(/^data:image\/jpeg;base64,/,'');
+      zip.file('xl/media/image'+(idx+1)+'.jpeg', b64, { base64: true });
+    }
+
+    // ── Build drawing1.xml ─────────────────────────────────────────────
+    const EMU    = 9525;
+    const IMG_W  = 620;  // px display width
+    const IMG_H  = 311;  // px display height
+    const SS_COL = 7;    // col H (0-indexed)
+
+    let anchors = '';
+    issues.forEach((_, idx) => {
+      const excelRow = idx + 1; // 0-indexed, +1 for header
+      anchors += `
+  <xdr:oneCellAnchor>
+    <xdr:from>
+      <xdr:col>${SS_COL}</xdr:col><xdr:colOff>${EMU * 1}</xdr:colOff>
+      <xdr:row>${excelRow}</xdr:row><xdr:rowOff>${EMU * 1}</xdr:rowOff>
+    </xdr:from>
+    <xdr:ext cx="${IMG_W * EMU}" cy="${IMG_H * EMU}"/>
+    <xdr:pic>
+      <xdr:nvPicPr>
+        <xdr:cNvPr id="${idx+2}" name="Snip ${idx+1}"/>
+        <xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr>
+      </xdr:nvPicPr>
+      <xdr:blipFill>
+        <a:blip r:embed="rId${idx+1}"/>
+        <a:stretch><a:fillRect/></a:stretch>
+      </xdr:blipFill>
+      <xdr:spPr>
+        <a:xfrm><a:off x="0" y="0"/><a:ext cx="${IMG_W * EMU}" cy="${IMG_H * EMU}"/></a:xfrm>
+        <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+      </xdr:spPr>
+    </xdr:pic>
+    <xdr:clientData/>
+  </xdr:oneCellAnchor>`;
+    });
+
+    zip.file('xl/drawings/drawing1.xml',
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
+           xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+           xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+${anchors}
+</xdr:wsDr>`);
+
+    // ── drawing1.xml.rels ──────────────────────────────────────────────
+    let rels = issues.map((_,i) =>
+      `  <Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${i+1}.jpeg"/>`
+    ).join('\n');
+    zip.file('xl/drawings/_rels/drawing1.xml.rels',
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+${rels}
+</Relationships>`);
+
+    // ── Link sheet2 (Defects) to drawing ──────────────────────────────
+    const s2rPath = 'xl/worksheets/_rels/sheet2.xml.rels';
+    let s2r = '';
+    try {
+      s2r = await zip.file(s2rPath).async('string');
+      s2r = s2r.replace('</Relationships>',
+        '  <Relationship Id="rIdDrw1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>\n</Relationships>');
+    } catch(e) {
+      s2r = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdDrw1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+</Relationships>`;
+    }
+    zip.file(s2rPath, s2r);
+
+    // ── Patch sheet2.xml ───────────────────────────────────────────────
+    const s2Path = 'xl/worksheets/sheet2.xml';
+    let s2 = await zip.file(s2Path).async('string');
+    if(!s2.includes('<drawing')) {
+      s2 = s2.replace('</worksheet>', '  <drawing r:id="rIdDrw1"/>\n</worksheet>');
+      if(!s2.includes('xmlns:r='))
+        s2 = s2.replace('<worksheet ', '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ');
+    }
+    zip.file(s2Path, s2);
+
+    // ── Content types ──────────────────────────────────────────────────
+    let ct = await zip.file('[Content_Types].xml').async('string');
+    if(!ct.includes('image/jpeg'))
+      ct = ct.replace('</Types>', '  <Default Extension="jpeg" ContentType="image/jpeg"/>\n</Types>');
+    if(!ct.includes('drawing1.xml'))
+      ct = ct.replace('</Types>', '  <Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>\n</Types>');
+    zip.file('[Content_Types].xml', ct);
+
+    // ── Save ───────────────────────────────────────────────────────────
+    const blob = await zip.generateAsync({ type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = project.replace(/[^a-z0-9]/gi,'_') + '_QA_' + dateStr.replace(/\//g,'-') + '.xlsx';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    notify('Excel exported — ' + issues.length + ' defects with embedded screenshots');
+
+  } catch(err) {
+    console.error(err);
+    notify('Export error: ' + err.message);
+  }
+
+  btn.innerHTML = '&#11015; Export to Excel (screenshots embedded)';
+  btn.disabled = false;
+}
+
+// ── Notify ────────────────────────────────────────────────────────────────
+// ── Tab switcher ──────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('show'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.getElementById('panel-' + name).classList.add('show');
+}
+
+// ── Video player ───────────────────────────────────────────────
+function vidHandleDrop(e) {
+  e.preventDefault();
+  const f = [...e.dataTransfer.files].find(f => f.type.startsWith('video/'));
+  if(f) vidLoadBlob(f);
+}
+function vidLoadFile(inp) { if(inp.files[0]) vidLoadBlob(inp.files[0]); inp.value=''; }
+function vidLoadBlob(file) { vidLoadSrc(URL.createObjectURL(file)); }
+function vidLoadURL() {
+  const u = document.getElementById('vid-url').value.trim();
+  if(u) vidLoadSrc(u);
+}
+function vidLoadSrc(src) {
+  const v = document.getElementById('qa-vid');
+  v.src = src; v.load();
+  document.getElementById('vid-load').style.display = 'none';
+  document.getElementById('vid-player-wrap').classList.add('show');
+}
+function vidChange() {
+  const v = document.getElementById('qa-vid'); v.pause(); v.src = '';
+  document.getElementById('vid-load').style.display = 'flex';
+  document.getElementById('vid-player-wrap').classList.remove('show');
+  document.getElementById('vid-stamp').style.display = 'none';
+}
+function vidOnLoaded() { vidUpdateTD(); }
+function vidOnErr() { notify('Could not load video'); vidChange(); }
+function vidOnPlay() {
+  document.getElementById('vid-pbtn').innerHTML = '&#9646;&#9646;';
+  document.getElementById('vid-ss-btn').disabled = true;
+  document.getElementById('vid-ss-btn').style.background = '#EBD9CC';
+  document.getElementById('vid-ss-btn').style.color = '#A07850';
+  document.getElementById('vid-ss-btn').style.cursor = 'not-allowed';
+}
+function vidOnPause() {
+  // Enable screenshot button
+  const ssBtn = document.getElementById('vid-ss-btn');
+  ssBtn.disabled = false;
+  ssBtn.style.background = '#1A1208';
+  ssBtn.style.color = '#F5EDE4';
+  ssBtn.style.cursor = 'pointer';
+  document.getElementById('vid-pbtn').innerHTML = '&#9654;';
+  // Auto-stamp timecode
+  const v = document.getElementById('qa-vid');
+  const ts = vidFmt(v.currentTime);
+  document.getElementById('vid-ts-inp').value = ts;
+  // Flash stamp indicator
+  const stamp = document.getElementById('vid-stamp');
+  stamp.textContent = ts + ' stamped';
+  stamp.style.display = 'inline';
+  setTimeout(() => stamp.style.display = 'none', 2000);
+  notify('Timecode auto-stamped: ' + ts);
+}
+function vidOnTU() {
+  const v = document.getElementById('qa-vid');
+  const pct = v.duration ? (v.currentTime/v.duration)*100 : 0;
+  document.getElementById('vid-tlp').style.width = pct + '%';
+  vidUpdateTD();
+}
+function vidUpdateTD() {
+  const v = document.getElementById('qa-vid');
+  document.getElementById('vid-td').textContent = vidFmt(v.currentTime) + ' / ' + vidFmt(v.duration||0);
+}
+function vidTogglePlay() { const v=document.getElementById('qa-vid'); v.paused?v.play():v.pause(); }
+function vidSkip(s) { const v=document.getElementById('qa-vid'); v.currentTime=Math.max(0,Math.min(v.duration||0,v.currentTime+s)); }
+function vidSeek(e) { const tl=document.getElementById('vid-tl'),v=document.getElementById('qa-vid'); v.currentTime=(e.offsetX/tl.offsetWidth)*(v.duration||0); }
+function vidFmt(s) {
+  if(isNaN(s)||s<0) return '0:00';
+  const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=Math.floor(s%60);
+  return h>0?h+':'+p2(m)+':'+p2(sec):m+':'+p2(sec);
+}
+function p2(n){return String(n).padStart(2,'0');}
+
+// Screenshot from video tab
+let vidCurrentSS = null;
+
+function vidTakeScreenshot() {
+  const v = document.getElementById('qa-vid');
+  if(!v.paused) { notify('Pause the video first'); return; }
+  try {
+    const c = document.getElementById('ss-canvas');
+    c.width  = v.videoWidth  || 640;
+    c.height = v.videoHeight || 360;
+    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+    const d = c.toDataURL('image/jpeg', 0.85);
+    if(!d || d === 'data:,') throw new Error('tainted');
+    vidCurrentSS = d;
+    const prev = document.getElementById('vid-ss-preview');
+    prev.src = d;
+    document.getElementById('vid-ss-preview-row').style.display = 'flex';
+    notify('Screenshot captured at ' + document.getElementById('vid-ts-inp').value);
+  } catch(e) {
+    notify('Screenshot failed — cross-origin video or unsupported format');
+    vidCurrentSS = null;
+  }
+}
+
+function vidClearSS() {
+  vidCurrentSS = null;
+  document.getElementById('vid-ss-preview-row').style.display = 'none';
+  document.getElementById('vid-ss-preview').src = '';
+}
+
+function vidViewFull() {
+  if(!vidCurrentSS) return;
+  const w = window.open();
+  w.document.write('<img src="' + vidCurrentSS + '" style="max-width:100%;display:block;margin:auto;background:#111">');
+}
+
+// Log issue from video tab
+function vidLogIssue() {
+  const desc = document.getElementById('vid-issue-inp').value.trim();
+  if(!desc) { document.getElementById('vid-issue-inp').focus(); return; }
+  counter++;
+  const issue = {
+    id:          counter,
+    tsStr:       document.getElementById('vid-ts-inp').value.trim() || '—',
+    videoSrc:    document.getElementById('vid-src-inp').value.trim(),
+    screenshot:  vidCurrentSS,
+    description: desc,
+    category:    document.getElementById('vid-cat-sel').value,
+    severity:    document.getElementById('vid-sev-sel').value,
+    status:      'Open',
+    loggedAt:    new Date().toLocaleString(),
+  };
+  issues.push(issue);
+  document.getElementById('vid-issue-inp').value = '';
+  vidClearSS();
+  render(); updateStats();
+  document.getElementById('exp-btn').disabled = false;
+  notify('Issue #' + counter + ' logged at ' + issue.tsStr + (issue.screenshot ? ' with screenshot' : ''));
+}
+
+function notify(msg) {
+  const n = document.getElementById('notif');
+  n.textContent = msg; n.classList.add('show');
+  clearTimeout(n._t); n._t = setTimeout(() => n.classList.remove('show'), 3500);
+}
+
+render();
+</script>
+</body>
+</html>
